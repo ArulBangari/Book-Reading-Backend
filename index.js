@@ -205,10 +205,10 @@ app.post("/add/", async (req, res) => {
 });
 
 passport.use(
-  new Strategy(async (user, password, done) => {
+  new Strategy(async (username, password, done) => {
     try {
       const result =
-        await sql`SELECT * FROM users WHERE email=${user} OR username=${user}`;
+        await sql`SELECT * FROM users WHERE email=${username} OR username=${username}`;
       console.log(result);
       if (result.length > 0) {
         const user = result[0];
