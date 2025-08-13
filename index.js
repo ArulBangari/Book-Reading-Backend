@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-const port = 4000;
+const port = process.env.PORT || 4000;
 
 async function testConnection() {
   try {
