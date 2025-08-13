@@ -51,6 +51,7 @@ async function testConnection() {
 testConnection();
 
 app.get("/current-user", (req, res) => {
+  console.log(req.isAuthenticated());
   if (req.isAuthenticated()) {
     res.json({
       loggedIn: true,
