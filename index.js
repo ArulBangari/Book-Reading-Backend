@@ -234,6 +234,7 @@ passport.serializeUser((user, done) => {
 });
 
 passport.deserializeUser(async (id, done) => {
+  console.log(id);
   try {
     const result = await sql`SELECT * FROM users WHERE id=${id}`;
     console.log("deserialize");
