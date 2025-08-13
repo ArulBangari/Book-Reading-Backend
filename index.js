@@ -1,4 +1,3 @@
-import pg from "pg";
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
@@ -6,15 +5,18 @@ import session from "express-session";
 import bcrypt from "bcrypt";
 import passport from "passport";
 import { Strategy } from "passport-local";
+import "dotenv/config";
+import { neon } from "@neondatabase/serverless";
 
 dotenv.config({ path: "./.env" });
+const sql = neon(process.env.DATABASE_URL);
 const saltRounds = 10;
 
 const app = express();
 
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: process.env.FRONTEND_URL,
     credentials: true,
   })
 );
@@ -37,18 +39,16 @@ app.use(passport.session());
 
 const port = 4000;
 
-const db = new pg.Client({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_DATABASE,
-  password: process.env.DB_PASSWORD,
-  port: process.env.PORT,
-});
-db.connect();
+async function testConnection() {
+  try {
+    const result = await sql`SELECT NOW() as now`;
+    console.log("Connected! Current time:", result[0].now);
+  } catch (error) {
+    console.error("Failed to connect to DB:", error);
+  }
+}
 
-app.get("/", async (req, res) => {
-  const response = await db.query("SELECT * FROM books");
-});
+testConnection();
 
 app.get("/current-user", (req, res) => {
   if (req.isAuthenticated()) {
@@ -67,16 +67,14 @@ app.get("/posts", async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    const result = await db.query(
-      `SELECT r.user_id, u.username, b.cover_url, b.author, b.title, r.review, r.id, r.created_at, r.book_id
+    const result =
+      await sql`SELECT r.user_id, u.username, b.cover_url, b.author, b.title, r.review, r.id, r.created_at, r.book_id
         FROM users u
         JOIN reviews r ON r.user_id=u.id
         JOIN books b ON r.book_id=b.id
         ORDER BY r.created_at
-        DESC LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-    return res.status(200).json({ reviews: result.rows });
+        DESC LIMIT ${limit} OFFSET ${offset}`;
+    return res.status(200).json({ reviews: result });
   } catch (err) {
     return res.status(500).json({ error: err });
   }
@@ -94,11 +92,11 @@ app.get("/notes", async (req, res) => {
   }
 
   try {
-    const result = await db.query(
-      `SELECT id, content, created_at FROM notes WHERE book_id = $1 AND user_id=$2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
-      [book_id, user_id, limit, offset]
-    );
-    return res.status(200).json({ notes: result.rows });
+    const result = await sql`SELECT id, content, created_at FROM notes
+        WHERE book_id = ${book_id} AND user_id = ${user_id}
+        ORDER BY created_at
+        DESC LIMIT ${limit} OFFSET ${offset}`;
+    return res.status(200).json({ notes: result });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
@@ -125,22 +123,18 @@ app.post("/register", async (req, res) => {
   const email = req.body.email;
   const password = req.body.password;
   try {
-    const result = await db.query(
-      `SELECT * FROM users where (username=$1 or email=$2)`,
-      [username, email]
-    );
-    if (result.rows.length > 0) {
+    const result =
+      await sql`SELECT * FROM users where (username = ${username} or email = ${email})`;
+    if (result.length > 0) {
       return res.status(409).json({ error: "Email already registered" });
     } else {
       bcrypt.hash(password, saltRounds, async (err, hash) => {
         if (err) {
           return res.status(500).send({ error: `${err}` });
         } else {
-          const result = await db.query(
-            "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING *",
-            [username, email, hash]
-          );
-          const user = result.rows[0];
+          const result =
+            await sql`INSERT INTO users (username, email, password_hash) VALUES (${username}, ${email}, ${hash}) RETURNING *`;
+          const user = result[0];
           req.login(user, (err) => {
             if (err) return next(error);
             return res
@@ -169,33 +163,31 @@ app.post("/add/", async (req, res) => {
   }
 
   const user_id = req.user.id;
+  const title = req.body.title;
+  const cover_url = req.body.cover_url;
+  const author = req.body.author;
+  const review = req.body.review;
+  const rating = parseInt(req.body.rating);
+  const note = req.body.note;
+
   try {
-    const bookResponse = await db.query(
-      `WITH ins AS (
+    const bookResponse = await sql`WITH ins AS (
         INSERT INTO books (title, cover_url, author)
-        VALUES($1, $2, $3)
+        VALUES(${title}, ${cover_url}, ${author})
         ON CONFLICT (title) DO NOTHING
         RETURNING *
         )
       SELECT * FROM ins
       UNION ALL
-      SELECT * FROM books WHERE title=$1 AND NOT EXISTS (SELECT $1 FROM ins)`,
-      [req.body.title, req.body.cover_url, req.body.author]
-    );
+      SELECT * FROM books WHERE title=$1 AND NOT EXISTS (SELECT $1 FROM ins)`;
     const book_id = bookResponse.rows[0].id;
-    if (req.body.review !== "") {
-      await db.query(
-        `INSERT INTO reviews (book_id, user_id, review, rating)
-            VALUES($1, $2, $3, $4)`,
-        [book_id, user_id, req.body.review, parseInt(req.body.rating)]
-      );
+    if (review !== "") {
+      await sql`INSERT INTO reviews (book_id, user_id, review, rating)
+            VALUES(${book_id}, ${user_id}, ${review}, ${rating})`;
     }
-    if (req.body.note !== "") {
-      await db.query(
-        `INSERT INTO notes (user_id, book_id, content)
-            VALUES($1, $2, $3)`,
-        [user_id, book_id, req.body.note]
-      );
+    if (note !== "") {
+      await sql`INSERT INTO notes (user_id, book_id, content)
+            VALUES(${user_id}, ${book_id}, ${note})`;
     }
 
     return res.status(201).send("Created successfully");
@@ -207,12 +199,10 @@ app.post("/add/", async (req, res) => {
 passport.use(
   new Strategy(async (user, password, done) => {
     try {
-      const result = await db.query(
-        "SELECT * FROM users WHERE email=$1 OR username=$1",
-        [user]
-      );
-      if (result.rows.length > 0) {
-        const user = result.rows[0];
+      const result =
+        await sql`SELECT * FROM users WHERE email=${user} OR username=${user}`;
+      if (result.length > 0) {
+        const user = result[0];
         const storedHashedPassword = user.password_hash;
         try {
           const match = await bcrypt.compare(password, storedHashedPassword);
@@ -238,11 +228,11 @@ passport.serializeUser((user, done) => {
 
 passport.deserializeUser(async (id, done) => {
   try {
-    const result = await db.query(`SELECT * FROM users WHERE id=$1`, [id]);
-    if (result.rows.length == 0) {
+    const result = await sql`SELECT * FROM users WHERE id=${id}`;
+    if (result.length == 0) {
       return done(new Error("User not found"));
     }
-    done(null, result.rows[0]);
+    done(null, result[0]);
   } catch (err) {
     done(err);
   }
