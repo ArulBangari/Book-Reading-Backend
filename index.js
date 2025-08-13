@@ -9,6 +9,7 @@ import "dotenv/config";
 import { neon } from "@neondatabase/serverless";
 
 dotenv.config({ path: "./.env" });
+console.log(process.env.FRONTEND_URL);
 const sql = neon(process.env.DATABASE_URL);
 const saltRounds = 10;
 
@@ -51,6 +52,7 @@ async function testConnection() {
 testConnection();
 
 app.get("/current-user", (req, res) => {
+  console.log(req);
   if (req.isAuthenticated()) {
     res.json({
       loggedIn: true,
@@ -125,6 +127,8 @@ app.post("/register", async (req, res) => {
   try {
     const result =
       await sql`SELECT * FROM users where (username = ${username} or email = ${email})`;
+    console.log("/register");
+    console.log(result);
     if (result.length > 0) {
       return res.status(409).json({ error: "Email already registered" });
     } else {
@@ -135,6 +139,8 @@ app.post("/register", async (req, res) => {
           const result =
             await sql`INSERT INTO users (username, email, password_hash) VALUES (${username}, ${email}, ${hash}) RETURNING *`;
           const user = result[0];
+          console.log(user);
+          console.log(result);
           req.login(user, (err) => {
             if (err) return next(error);
             return res
@@ -180,7 +186,7 @@ app.post("/add/", async (req, res) => {
       SELECT * FROM ins
       UNION ALL
       SELECT * FROM books WHERE title=$1 AND NOT EXISTS (SELECT $1 FROM ins)`;
-    const book_id = bookResponse.rows[0].id;
+    const book_id = bookResponse[0].id;
     if (review !== "") {
       await sql`INSERT INTO reviews (book_id, user_id, review, rating)
             VALUES(${book_id}, ${user_id}, ${review}, ${rating})`;
@@ -201,6 +207,7 @@ passport.use(
     try {
       const result =
         await sql`SELECT * FROM users WHERE email=${user} OR username=${user}`;
+      console.log(result);
       if (result.length > 0) {
         const user = result[0];
         const storedHashedPassword = user.password_hash;
@@ -229,6 +236,8 @@ passport.serializeUser((user, done) => {
 passport.deserializeUser(async (id, done) => {
   try {
     const result = await sql`SELECT * FROM users WHERE id=${id}`;
+    console.log("deserialize");
+    console.log(result);
     if (result.length == 0) {
       return done(new Error("User not found"));
     }
