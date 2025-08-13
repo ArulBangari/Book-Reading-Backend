@@ -9,7 +9,6 @@ import "dotenv/config";
 import { neon } from "@neondatabase/serverless";
 
 dotenv.config({ path: "./.env" });
-console.log(process.env.FRONTEND_URL);
 const sql = neon(process.env.DATABASE_URL);
 const saltRounds = 10;
 
@@ -52,7 +51,6 @@ async function testConnection() {
 testConnection();
 
 app.get("/current-user", (req, res) => {
-  console.log(req);
   if (req.isAuthenticated()) {
     res.json({
       loggedIn: true,
